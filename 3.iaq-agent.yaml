@@ -1,0 +1,63 @@
+services:
+  # IAQ Sensor Agent
+  iaq-agent:
+    image: chakorntestiot.azurecr.io/iot_iaq-agent:v1
+    container_name: iaq-sensor-agent
+    environment:
+      # CSV Data Configuration (Multi-file mode)
+      CSV_DIRECTORY_PATH: /app/data
+      CSV_FILE_PATTERN: "*.csv"
+      CSV_READING_MODE: chronological
+      
+      # Scheduler Configuration
+      SEND_INTERVAL: ${SEND_INTERVAL:-5}
+      BATCH_SIZE: ${BATCH_SIZE:-1}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_DELAY: ${RETRY_DELAY:-2}
+      ENABLE_REPLAY: ${ENABLE_REPLAY:-true}
+      
+      # Logging Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      STATS_INTERVAL: ${STATS_INTERVAL:-60}
+      
+      # RabbitMQ Configuration
+      RABBITMQ_HOST: shared-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-iaq_data_queue}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-}
+      RABBITMQ_DURABLE: ${RABBITMQ_DURABLE:-true}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-30}
+      RABBITMQ_HEARTBEAT: ${RABBITMQ_HEARTBEAT:-600}
+      RABBITMQ_RETRY_DELAY: ${RABBITMQ_RETRY_DELAY:-5}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+    volumes:
+      - ./sample_data:/app/data:ro
+      - iaq_logs:/app/logs
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('IAQ Agent healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  iot-shared-network:
+    driver: bridge
+    name: iot-shared-network
+    external: true
+
+volumes:
+  iaq_logs:
+    external: true
+    name: iaq-agent-logs

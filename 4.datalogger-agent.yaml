@@ -1,0 +1,50 @@
+services:
+  # DataLogger Agent
+  datalogger-agent:
+    image: chakorntestiot.azurecr.io/iot_datalogger-agent:v1
+    container_name: datalogger-agent
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://postgres:password@timescaledb:5432/hotel_iot
+      
+      # RabbitMQ Configuration
+      RABBITMQ_HOST: shared-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_QUEUE: iaq_data_queue
+      RABBITMQ_EXCHANGE: 
+      RABBITMQ_ROUTING_KEY: 
+      
+      # Application Configuration
+      BATCH_SIZE: 100
+      BATCH_TIMEOUT: 30.0
+      VALIDATOR_STRICT_MODE: "true"
+      LOG_LEVEL: INFO
+      
+      # Python Configuration
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+    volumes:
+      - ./datalogger-agent/logs:/app/logs
+      - ./datalogger-agent/data:/app/data
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('DataLogger Agent healthy')"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  iot-shared-network:
+    driver: bridge
+    name: iot-shared-network
+    external: true
