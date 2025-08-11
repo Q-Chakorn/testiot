@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # RabbitMQ Message Broker (Shared)
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: shared-rabbitmq
+    hostname: shared-rabbitmq
+    ports:
+      - "5672:5672"     # AMQP port
+      - "15672:15672"   # Management UI port
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - shared_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # IAQ Sensor Agent
+  iaq-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VERSION: ${VERSION:-1.0.0}
+        VCS_REF: ${VCS_REF:-}
+    container_name: iaq-sensor-agent
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      # CSV Data Configuration (Multi-file mode)
+      # Use directory mode to read all CSV files automatically
+      CSV_DIRECTORY_PATH: /app/data
+      CSV_FILE_PATTERN: "*.csv"
+      CSV_READING_MODE: chronological
+      
+      # Single-file mode (disabled for multi-file operation)
+      # CSV_DATA_PATH: /app/data/sample_iaq_data_Room101.csv
+      # DEVICE_ID: room_101
+      
+      # Scheduler Configuration
+      SEND_INTERVAL: ${SEND_INTERVAL:-5}
+      BATCH_SIZE: ${BATCH_SIZE:-1}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_DELAY: ${RETRY_DELAY:-2}
+      ENABLE_REPLAY: ${ENABLE_REPLAY:-true}
+      
+      # Logging Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      STATS_INTERVAL: ${STATS_INTERVAL:-60}
+      
+      # RabbitMQ Configuration
+      RABBITMQ_HOST: shared-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-iaq_data_queue}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-iot_data}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-sensor.iaq}
+      RABBITMQ_DURABLE: ${RABBITMQ_DURABLE:-true}
+      RABBITMQ_CONNECTION_TIMEOUT: ${RABBITMQ_CONNECTION_TIMEOUT:-30}
+      RABBITMQ_HEARTBEAT: ${RABBITMQ_HEARTBEAT:-600}
+      RABBITMQ_RETRY_DELAY: ${RABBITMQ_RETRY_DELAY:-5}
+      RABBITMQ_MAX_RETRIES: ${RABBITMQ_MAX_RETRIES:-3}
+    volumes:
+      # Mount the entire sample_data directory from the host
+      - /Users/ikkyu/Desktop/testIoT/sample_data:/app/data:ro
+      # Mount logs directory
+      - iaq_logs:/app/logs
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, '/app'); from scheduler import create_scheduler_from_env; print('Health check passed')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Monitoring with Prometheus (commented out by default)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: iaq-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   networks:
+  #     - iaq-network
+  #   restart: unless-stopped
+
+  # Optional: Grafana for visualization (commented out by default)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: iaq-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   networks:
+  #     - iaq-network
+  #   restart: unless-stopped
+
+networks:
+  iot-shared-network:
+    driver: bridge
+    name: iot-shared-network
+
+volumes:
+  shared_rabbitmq_data:
+    name: shared-rabbitmq-data
+  iaq_logs:
+    name: iaq-agent-logs
+  # prometheus_data:
+  #   name: iaq-prometheus-data
+  # grafana_data:
+  #   name: iaq-grafana-data

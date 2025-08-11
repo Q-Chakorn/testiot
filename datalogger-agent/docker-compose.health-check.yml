@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # TimescaleDB Database
+  timescaledb:
+    image: timescale/timescaledb:latest-pg13
+    container_name: hotel_iot_db
+    environment:
+      POSTGRES_DB: hotel_iot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./schema.sql:/docker-entrypoint-initdb.d/02-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_iot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    container_name: hotel_iot_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # DataLogger Agent with Health Check
+  datalogger:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: hotel_iot_datalogger
+    environment:
+      DATABASE_URL: postgresql://postgres:password@timescaledb:5432/hotel_iot
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_QUEUE: iaq_data_queue
+      RABBITMQ_EXCHANGE: iot_data
+      RABBITMQ_ROUTING_KEY: sensor.iaq
+      HEALTH_CHECK_PORT: 8080
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"  # Health check endpoint
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    # Health check using the built-in HTTP endpoint
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Health Check Monitor (optional monitoring service)
+  health-monitor:
+    image: curlimages/curl:latest
+    container_name: health_monitor
+    depends_on:
+      - datalogger
+    command: >
+      sh -c "
+        echo 'Starting health monitoring...';
+        while true; do
+          echo '=== Health Check Report $(date) ===';
+          
+          # Check DataLogger health
+          echo 'DataLogger Health:';
+          curl -s http://datalogger:8080/health | grep -o '\"status\":\"[^\"]*\"' | cut -d'\"' -f4 || echo 'FAILED';
+          
+          # Check detailed health
+          echo 'Detailed Health Check:';
+          curl -s http://datalogger:8080/health/detailed | 
+            grep -o '\"overall_status\":\"[^\"]*\"' | cut -d'\"' -f4 || echo 'FAILED';
+          
+          # Check database health specifically  
+          echo 'Database Health:';
+          curl -s http://datalogger:8080/health/database | 
+            grep -o '\"overall_status\":\"[^\"]*\"' | cut -d'\"' -f4 || echo 'FAILED';
+          
+          echo '================================';
+          sleep 60;
+        done
+      "
+    restart: unless-stopped
+
+volumes:
+  db_data:
+
+networks:
+  default:
+    name: hotel_iot_network
