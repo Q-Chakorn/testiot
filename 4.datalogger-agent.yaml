@@ -1,7 +1,7 @@
 services:
   # DataLogger Agent
   datalogger-agent:
-    image: chakorntestiot.azurecr.io/iot_datalogger-agent:v1
+    image: testiotacr.azurecr.io/datalogger-agent:v1
     container_name: datalogger-agent
     environment:
       # Database Configuration
