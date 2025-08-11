@@ -1,0 +1,42 @@
+services:
+  # TimescaleDB Database
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: datalogger-timescaledb
+    environment:
+      POSTGRES_DB: hotel_iot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      TIMESCALEDB_TELEMETRY: 'off'
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./datalogger-agent/init_db.sql:/docker-entrypoint-initdb.d/01-init_db.sql:ro
+      - ./datalogger-agent/schema.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./datalogger-agent/docker-init-db.sh:/docker-entrypoint-initdb.d/03-init-script.sh:ro
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_iot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  iot-shared-network:
+    driver: bridge
+    name: iot-shared-network
+    external: true
+
+volumes:
+  timescaledb_data:
+    external: true
+    name: datalogger-timescaledb-data

@@ -1,0 +1,38 @@
+services:
+  # Shared RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: shared-rabbitmq
+    hostname: shared-rabbitmq
+    ports:
+      - "5672:5672"     # AMQP port
+      - "15672:15672"   # Management UI port
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - shared_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - iot-shared-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  iot-shared-network:
+    driver: bridge
+    name: iot-shared-network
+
+volumes:
+  shared_rabbitmq_data:
+    name: shared-rabbitmq-data
