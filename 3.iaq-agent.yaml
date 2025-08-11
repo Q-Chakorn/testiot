@@ -1,7 +1,7 @@
 services:
   # IAQ Sensor Agent
   iaq-agent:
-    image: chakorntestiot.azurecr.io/iot_iaq-agent:v1
+    image: testiotacr.azurecr.io/iaq-agent:v1
     container_name: iaq-sensor-agent
     environment:
       # CSV Data Configuration (Multi-file mode)
