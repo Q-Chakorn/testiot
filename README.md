@@ -102,3 +102,6 @@ docker-compose logs -f datalogger-agent
 - สร้าง views/aggregates เพิ่มเติม
 - ปรับแต่งการบันทึก logs
 
+### Pipeline
+- https://github.com/Q-Chakorn/pipline-iot
+
