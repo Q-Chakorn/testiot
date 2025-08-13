@@ -112,4 +112,3 @@ docker-compose logs -f datalogger-agent
 ![](img/3.png)
 ![](img/4.png)
 ![](img/5.png)
-
