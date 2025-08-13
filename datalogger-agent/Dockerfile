@@ -38,10 +38,11 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Production stage
 FROM python:3.11-slim as production
 
-# Install runtime dependencies
+# Install runtime dependencies including PostgreSQL client
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -55,19 +56,46 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application code
+# Copy application code and schema
 COPY --chown=datalogger:datalogger . .
 
 # Create directories for logs and data
 RUN mkdir -p /app/logs /app/data && \
     chown -R datalogger:datalogger /app
 
+# Create database initialization script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Wait for TimescaleDB to be ready\n\
+until pg_isready -h timescaledb -U postgres; do\n\
+  echo "Waiting for TimescaleDB..."\n\
+  sleep 2\n\
+done\n\
+\n\
+# Create database\n\
+psql -h timescaledb -U postgres -c "CREATE DATABASE IF NOT EXISTS hotel_iot;"\n\
+\n\
+# Create TimescaleDB extension\n\
+psql -h timescaledb -U postgres -d hotel_iot -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"\n\
+\n\
+# Import schema\n\
+if [ -f "/app/schema.sql" ]; then\n\
+  psql -h timescaledb -U postgres -d hotel_iot -f /app/schema.sql\n\
+fi\n\
+\n\
+# Start the main application\n\
+exec python main.py' > /app/init-and-run.sh && \
+    chmod +x /app/init-and-run.sh && \
+    chown datalogger:datalogger /app/init-and-run.sh
+
 # Set environment variables
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PGPASSWORD=password
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -79,5 +107,5 @@ USER datalogger
 # Expose port for health checks (if needed)
 EXPOSE 8080
 
-# Set default command
-CMD ["python", "main.py"]
+# Set default command to run initialization script
+CMD ["/app/init-and-run.sh"]
