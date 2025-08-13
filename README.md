@@ -105,3 +105,11 @@ docker-compose logs -f datalogger-agent
 ### Pipeline
 - https://github.com/Q-Chakorn/pipline-iot
 
+### หน้าตาข้อมูลใน DB
+
+![](img/1.png)
+![](img/2.png)
+![](img/3.png)
+![](img/4.png)
+![](img/5.png)
+
