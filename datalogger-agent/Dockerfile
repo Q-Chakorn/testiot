@@ -56,7 +56,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application code and schema
+# Copy application code
 COPY --chown=datalogger:datalogger . .
 
 # Create directories for logs and data
@@ -67,27 +67,43 @@ RUN mkdir -p /app/logs /app/data && \
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
+echo "Starting DataLogger Agent with database initialization..."\n\
+\n\
 # Wait for TimescaleDB to be ready\n\
-until pg_isready -h timescaledb -U postgres; do\n\
-  echo "Waiting for TimescaleDB..."\n\
+echo "Waiting for TimescaleDB to be ready..."\n\
+until pg_isready -h timescaledb -p 5432 -U postgres; do\n\
+  echo "TimescaleDB is unavailable - sleeping"\n\
   sleep 2\n\
 done\n\
 \n\
-# Create database\n\
-psql -h timescaledb -U postgres -c "CREATE DATABASE IF NOT EXISTS hotel_iot;"\n\
+echo "TimescaleDB is ready - executing setup"\n\
+\n\
+# Set password environment\n\
+export PGPASSWORD=password\n\
+\n\
+# Create database if not exists\n\
+echo "Creating database hotel_iot..."\n\
+psql -h timescaledb -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '\''hotel_iot'\''" | grep -q 1 || psql -h timescaledb -U postgres -c "CREATE DATABASE hotel_iot;"\n\
 \n\
 # Create TimescaleDB extension\n\
+echo "Creating TimescaleDB extension..."\n\
 psql -h timescaledb -U postgres -d hotel_iot -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"\n\
 \n\
-# Import schema\n\
+# Import schema if exists\n\
 if [ -f "/app/schema.sql" ]; then\n\
+  echo "Importing schema..."\n\
   psql -h timescaledb -U postgres -d hotel_iot -f /app/schema.sql\n\
+else\n\
+  echo "No schema.sql found, skipping schema import"\n\
 fi\n\
 \n\
+echo "Database setup completed successfully!"\n\
+\n\
 # Start the main application\n\
-exec python main.py' > /app/init-and-run.sh && \
-    chmod +x /app/init-and-run.sh && \
-    chown datalogger:datalogger /app/init-and-run.sh
+echo "Starting DataLogger Agent..."\n\
+exec python main.py' > /app/init-db.sh && \
+    chmod +x /app/init-db.sh && \
+    chown datalogger:datalogger /app/init-db.sh
 
 # Set environment variables
 ENV PYTHONPATH=/app \
@@ -107,5 +123,5 @@ USER datalogger
 # Expose port for health checks (if needed)
 EXPOSE 8080
 
-# Set default command to run initialization script
-CMD ["/app/init-and-run.sh"]
+# Set default command to initialize database then start app
+CMD ["/app/init-db.sh"]
